@@ -1,0 +1,23 @@
+Package: tsanom
+Title: Combining Forecasts For Enhanced Anomaly Detection
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Elizabeth",
+           family = "Riddle-Workman",
+           role = c("aut", "cre"),
+           email = "elizabeth.riddle-workman13@imperial.ac.uk",
+           comment = c(ORCID = "0000-0003-3851-8676"))
+Description: Functions for forecasting and anomaly detection in real time for large time series. Anomaly detector capable of detecting both point and contextual anomalies.
+License: `use_gpl3_license()`
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.0
+Imports:
+        Matrix,
+        ggplot2,
+        grid,
+        gridExtra,
+        forecast,
+        matrixStats,
+        plyr
