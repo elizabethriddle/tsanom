@@ -1,0 +1,86 @@
+---
+title: "tsanom Usage"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+---
+
+This document demonstrates the usage of the functions within tsanom. Specifically the batch and sequential versions of FDARIMA and SL Decomposition.
+
+To begin we must install our package:
+
+
+```{r}
+devtools::install_github("elizabethriddle/tsanom")
+library(tsanom)
+```
+
+
+We nowcreate data using the built in function *data_simulation_function* and use the same parameters as our paper.
+
+```{r}
+simulated_TS <- data_simulation_function(n=20,burnin_period=10,no_additive_long=2,no_subtractive_long=2,no_point=80,day_freq=1440,ar_coef=0.9,ma_coef=5)
+```
+
+## FDARIMA
+
+### Batch
+
+FDARIMA is applied to the full data set at once using a batch approach however within the function, updates at each point are computed.
+
+```{r}
+FDARIMA_Batch_results <- FDARIMA(matrix(simulated_TS$y_anomalies,nrow=1440),10,19,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005)
+```
+
+
+
+
+### Sequential
+
+```{r}
+# Run initially on first 10 days:
+FDARIMA_initial_results <- FDARIMA_initial(matrix(simulated_TS$y_anomalies,nrow=1440)[,c(1:10)],1440,5,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005,sliding_window_size=14400)
+beep(10)
+
+# Run over remaining data:
+FDARIMA_current_results <- FDARIMA_initial_results
+for(i in c(14401:(1440*20))){
+  FDARIMA_new_results <- FDARIMA_updater(i,simulated_TS$y_anomalies[i],FDARIMA_current_results$new_data,FDARIMA_current_results$current_data,FDARIMA_current_results$fda_prediction_update,FDARIMA_current_results$ARIMA_input_data,FDARIMA_current_results$previous_FDA_wm,FDARIMA_current_results$current_FDA_wm,FDARIMA_current_results$ARIMA_fcast,FDARIMA_current_results$sum_weights_vec,FDARIMA_current_results$sum_weights_vec_new,FDARIMA_current_results$current_lambda,FDARIMA_current_results$FDA_AE,FDARIMA_current_results$ARIMA_AE,FDARIMA_current_results$strange_data_points,frequency_of_data=1440,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005,sliding_window_size=14400)
+  
+  FDARIMA_current_results <- FDARIMA_new_results
+}
+
+
+```
+
+
+
+
+## SL Decomposition
+
+### Batch
+
+
+```{r}
+SLD_Batch_results <- SLDecomposition(matrix(simulated_TS$y_anomalies,nrow=1440),frequency_of_data = 1440,arima_window = 60,no_days_train=10,starting_no_obs=5,fda_forgetting_factor=0.99,learning_rate=1e-3,threshold_val = 0.005)
+```
+
+
+### Sequential
+
+
+```{r}
+# Run initially on first 10 days:
+SLD_initial_results <- SLD_initial(matrix(simulated_TS$y_anomalies,nrow=1440)[,c(1:6)],1440,5,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005,sliding_window_size=14400)
+beep(10)
+
+
+# Run over remaining data:
+SLD_current_results <- SLD_initial_results
+for(i in c(((1440*6)+1):(1440*20))){
+  SLD_new_results <- SLD_updater(i,simulated_TS$y_anomalies[i],SLD_current_results$new_data,SLD_current_results$current_data,SLD_current_results$SLD_fda_anomaly,SLD_current_results$previous_FDA_wm,SLD_current_results$current_FDA_wm,SLD_current_results$ARIMA_fcast,SLD_current_results$sum_weights_vec,SLD_current_results$sum_weights_vec_new,SLD_current_results$current_lambda,SLD_current_results$SLD_fda_error_anomaly,SLD_current_results$SLD_combined_prediction_error_anomaly,SLD_current_results$strange_data_points,frequency_of_data=1440,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005,sliding_window_size=14400)
+  
+  SLD_current_results <- SLD_new_results
+}
+
+```

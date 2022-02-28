@@ -1,124 +1,3 @@
-#' FDA model calculator for data without anomalies
-#'
-#' This function produces a weighted FDA curve for the input series.
-#' The coefficients of the b-spline are calculated using poisson regression.
-#' This gives the average curve, sd and a prediction interval for the curve.
-#'
-#' @param datamat a n*p matrix containing all previous periods of the series where n is
-#' the length of the period and p is the total number of periods observed
-#' @param rangex vector c(1:n), the point numbers in the period
-#' @param nb number of basis functions to use
-#' @param no order of basis functions
-#' @param obsweights vector of weights for each column of the data
-#' @param includebpoints A booliean. If TRUE then must specify breakpoints otherwise do not
-#' @param bpoints Optional vector (required if includebpoints is TRUE). This details the breakpoints
-#' to use for the basis functions
-#' @param p the significance level to use for the prediction interval
-#'
-#' @return List containing average, sd and upper and lower ranges.
-#' @export
-fda_mean_weighted_poisson<-function(datamat,rangex,nb,no,obsweights,includebpoints=FALSE,bpoints=NULL,p=0.999){
-  n<-ncol(datamat)
-  data_mean<-rowWeightedMeans(datamat,obsweights)
-  if(includebpoints!=FALSE){
-    basis_function <- create.bspline.basis(rangeval=c(min(rangex),max(rangex)),nbasis=nb,norder=no,breaks=bpoints)
-  }
-  else{
-    basis_function <- create.bspline.basis(rangeval=c(min(rangex),max(rangex)),nbasis=nb,norder=no)
-  }
-  basis_mat<-eval.basis(rangex,basis_function)
-  basis_data<-as.data.frame(basis_mat)
-  basis_data_mat<-cbind(data_mean,basis_data)
-  basis_coeffs<-glm(data_mean~ . -1,family="poisson",data=basis_data_mat)
-
-  avmat<-basis_coeffs$fitted.values
-
-  # Weighted SD:
-  smoothdatamat<- as.matrix(basis_coeffs$fitted.values)[,rep(1,times=n)]
-  datares<-datamat - smoothdatamat
-  w_sum<-sum(obsweights)
-  w2_sum<-sum(obsweights^2)
-  datavar<-apply((datares^2)*obsweights,1,sum)/(w_sum-(w2_sum/w_sum))
-  edge.stderr<-sqrt(datavar)
-
-  # Now find the lower and upper and upper limits at
-  q<-0.5+(p/2)
-  number_points <- rep(ncol(datamat),times=nrow(datamat))
-  mult_val <- qt(q,number_points-1)
-
-  lower_val <- avmat - (mult_val*edge.stderr*sqrt(1+(1/number_points)))
-  upper_val <- avmat + (mult_val*edge.stderr*sqrt(1+(1/number_points)))
-
-
-  # Now return the average values, and the standard deviation values:
-  return(list(mean_curve=avmat,st_curve=edge.stderr,upper_val=upper_val,lower_val=lower_val))
-}
-
-#' FDA model calculator for data with anomalies
-#'
-#' This function produces a weighted FDA curve for the input series but excludes
-#' anomalous points from its calculation.
-#' The coefficients of the b-spline are calculated using poisson regression.
-#' This gives the average curve, sd and a prediction interval for the curve.
-#'
-#' @param datamat a n*p matrix containing all previous periods of the series where n is
-#' the length of the period and p is the total number of periods observed
-#' @param rangex vector c(1:n), the point numbers in the period
-#' @param nb number of basis functions to use
-#' @param no order of basis functions
-#' @param obsweights vector of weights for each column of the data
-#' @param extreme_days a vector of values corresponds to the column of anomalous points
-#' to be excluded from the model
-#' @param extreme_bins a vector of values corresponding to the rows of anomalous points
-#' to be excluded from the model
-#' @param includebpoints A booliean. If TRUE then must specify breakpoints otherwise do not
-#' @param bpoints Optional vector (required if includebpoints is TRUE). This details the breakpoints
-#' to use for the basis functions
-#' @param p the significance level to use for the prediction interval
-#'
-#' @return List containing average, sd and upper and lower ranges.
-#' @export
-fda_mean_weighted_poisson_extreme<-function(datamat,rangex,nb,no,obsweights,extreme_days,extreme_bins,includebpoints=FALSE,bpoints=NULL,p=0.999){
-  n<-ncol(datamat)
-  weight_matrix <- matrix(rep(obsweights,each=nrow(datamat)),nrow=nrow(datamat),ncol=ncol(datamat))
-  weight_matrix[extreme_bins,extreme_days] <- 0
-  weight_matrix <- weight_matrix * (1/rowSums(weight_matrix))
-  data_mean <- rowSums((weight_matrix*datamat))
-  if(includebpoints!=FALSE){
-    basis_function <- create.bspline.basis(rangeval=c(min(rangex),max(rangex)),nbasis=nb,norder=no,breaks=bpoints)
-  }
-  else{
-    basis_function <- create.bspline.basis(rangeval=c(min(rangex),max(rangex)),nbasis=nb,norder=no)
-  }
-  basis_mat<-eval.basis(rangex,basis_function)
-  basis_data<-as.data.frame(basis_mat)
-  basis_data_mat<-cbind(data_mean,basis_data)
-  basis_coeffs<-glm(data_mean~ . -1,family="poisson",data=basis_data_mat)
-
-  avmat<-basis_coeffs$fitted.values
-
-
-  # Weighted SD:
-  smoothdatamat<- as.matrix(basis_coeffs$fitted.values)[,rep(1,times=n)]
-  datares<-datamat - smoothdatamat
-  datares[weight_matrix==0]<-0
-  w_sum<-sum(obsweights)
-  w2_sum<-sum(obsweights^2)
-  datavar<-apply((datares^2)*obsweights,1,sum)/(w_sum-(w2_sum/w_sum))
-  edge.stderr<-sqrt(datavar)
-
-  # Now find the lower and upper and upper limits at
-  q<-0.5+(p/2)
-  number_points <- rowSums(weight_matrix>0)
-  mult_val <- qt(q,number_points-1)
-
-  lower_val <- avmat - (mult_val*edge.stderr*sqrt(1+(1/number_points)))
-  upper_val <- avmat + (mult_val*edge.stderr*sqrt(1+(1/number_points)))
-
-  # Now return the average values, and the standard deviation values:
-  return(list(mean_curve=avmat,st_curve=edge.stderr,upper_val=upper_val,lower_val=lower_val))
-}
-
 #' FDARIMA anomaly detector
 #'
 #' Detects anomalies by separately detecting anomalies using long-term and short-term
@@ -138,10 +17,10 @@ fda_mean_weighted_poisson_extreme<-function(datamat,rangex,nb,no,obsweights,extr
 #' @return returns list containing a matrix which contains the forecasts, and anomalies detected by each procedure and combined anomalies. Also
 #' outputs a separate vector containing the combined anomalies only
 #' @export
-FDARIMA<-function(datamat,no_days_train,max_no_days,fda_forgetting_factor=0.86,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005){
+FDARIMA<-function(datamat,no_days_train,max_no_days,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005){
   datavec<-c(datamat)
-  poisson_fda_predictions <- c()
-  poisson_fda_variances <- c()
+  fda_predictions <- c()
+  fda_variances <- c()
   arima_predictions <-c()
   strange_days <- c()
   strange_bins <- c()
@@ -153,29 +32,26 @@ FDARIMA<-function(datamat,no_days_train,max_no_days,fda_forgetting_factor=0.86,a
     if(no_days==no_days_train){
       # Fit poisson weighted FDA:
       lambda<-fda_forgetting_factor
-      lambda_over_time<-c(rep(lambda,times=1440))
-      w_vec<-c()
+      lambda_over_time<-c(rep(lambda,times=nrow(datamat)))
       no_obs<-no_days
-      for(i in 1:no_obs){
-        w_vec<-c(w_vec,((lambda)^(no_obs-i)))
-      }
+      previous_weights <- lambda^{no_obs-c(1:(no_obs-1))}
       edge_data<-datamat[,c(1:no_obs)]
-      fda_mean_weight_poisson<-fda_mean_weighted_poisson(edge_data,c(1:1440),102,4,w_vec,includebpoints=FALSE)
-      poisson_fda_predictions<-c(poisson_fda_predictions,fda_mean_weight_poisson$mean_curve)
-      poisson_fda_variances<-c(poisson_fda_variances,fda_mean_weight_poisson$st_curve)
-      FDA_AE<-c(FDA_AE,abs(fda_mean_weight_poisson$mean_curve-datamat[,(no_obs+1)]))
+      fda_mean_weight<-fda_mean_weighted(edge_data,c(1:nrow(datamat)),102,4,c(previous_weights,1),includebpoints=FALSE)
+      fda_predictions<-c(fda_predictions,fda_mean_weight$mean_curve)
+      fda_variances<-c(fda_variances,fda_mean_weight$st_curve)
+      FDA_AE<-c(FDA_AE,abs(fda_mean_weight$mean_curve-datamat[,(no_obs+1)]))
 
       #Update lambda:
-      new_lambda<-update_fda_ff(lambda,learning_rate,edge_data,datamat[,(no_obs+1)])
+      new_lambda<-update_fda_ff_adaptive(lambda,previous_weights,learning_rate,edge_data,datamat[,(no_obs+1)])
       if((0.6<=new_lambda) & (new_lambda<1)){
         lambda <- new_lambda
-        lambda_over_time<-c(lambda_over_time,rep(new_lambda,times=1440))
+        lambda_over_time<-c(lambda_over_time,rep(new_lambda,times=nrow(datamat)))
       }else{
-        lambda_over_time<-c(lambda_over_time,rep(lambda,times=1440))
+        lambda_over_time<-c(lambda_over_time,rep(lambda,times=nrow(datamat)))
       }
 
       # Now perform ARIMA and at each step check to see if anomaly:
-      for(i in c(((no_days)*1440):((((no_days+1)*1440)-1)))){
+      for(i in c(((no_days)*nrow(datamat)):((((no_days+1)*nrow(datamat))-1)))){
         fit<-auto.arima(datavec[setdiff(c((i-arima_window_size+1):i),strange_data_points)],max.p = 10,max.q = 10, max.d = 5,seasonal = FALSE)
         fcast<-forecast(fit,h=1)$mean[1]
         arima_predictions<-c(arima_predictions,fcast)
@@ -184,29 +60,26 @@ FDARIMA<-function(datamat,no_days_train,max_no_days,fda_forgetting_factor=0.86,a
     }
     else{
       # Fit poisson weighted FDA:
-      w_vec<-c()
       no_obs<-no_days
-      for(i in 1:no_obs){
-        w_vec<-c(w_vec,((lambda)^(no_obs-i)))
-      }
+      previous_weights <- lambda*c(previous_weights,1)
       edge_data<-datamat[,c(1:no_obs)]
-      fda_mean_weight_poisson<-fda_mean_weighted_poisson_extreme(edge_data,c(1:1440),102,4,w_vec,strange_days,strange_bins,includebpoints=FALSE)
-      poisson_fda_predictions<-c(poisson_fda_predictions,fda_mean_weight_poisson$mean_curve)
-      poisson_fda_variances<-c(poisson_fda_variances,fda_mean_weight_poisson$st_curve)
-      FDA_AE<-c(FDA_AE,abs(fda_mean_weight_poisson$mean_curve-datamat[,(no_obs+1)]))
+      fda_mean_weight<-fda_mean_weighted_extreme(edge_data,c(1:nrow(datamat)),102,4,c(previous_weights,1),strange_days,strange_bins,includebpoints=FALSE)
+      fda_predictions<-c(fda_predictions,fda_mean_weight$mean_curve)
+      fda_variances<-c(fda_variances,fda_mean_weight$st_curve)
+      FDA_AE<-c(FDA_AE,abs(fda_mean_weight$mean_curve-datamat[,(no_obs+1)]))
 
       if(no_days !=max_no_days){
         #Update lambda:
-        new_lambda<-update_fda_ff(lambda,learning_rate,edge_data,datamat[,(no_obs+1)])
+        new_lambda<-update_fda_ff_adaptive(lambda,previous_weights,learning_rate,edge_data,datamat[,(no_obs+1)])
         if((0.6<=new_lambda) & (new_lambda<1)){
           lambda <- new_lambda
-          lambda_over_time<-c(lambda_over_time,rep(new_lambda,times=1440))
+          lambda_over_time<-c(lambda_over_time,rep(new_lambda,times=nrow(datamat)))
         }else{
-          lambda_over_time<-c(lambda_over_time,rep(lambda,times=1440))
+          lambda_over_time<-c(lambda_over_time,rep(lambda,times=nrow(datamat)))
         }
       }
       # Now perform ARIMA and at each step check to see if anomaly:
-      for(i in c(((no_days)*1440):((((no_days+1)*1440)-1)))){
+      for(i in c(((no_days)*nrow(datamat)):((((no_days+1)*nrow(datamat))-1)))){
         arima_data_input <- datavec[setdiff(c((i-arima_window_size+1):i),strange_data_points)]
         if(length(arima_data_input)==0){
           while(length(arima_data_input)==0){
@@ -224,13 +97,7 @@ FDARIMA<-function(datamat,no_days_train,max_no_days,fda_forgetting_factor=0.86,a
         fisher_score <- -2*(log(FDA_p_value_point)+log(ARIMA_p_value_point))
         if(fisher_score>qchisq(1-threshold_val,4)){
           # Anomalous!
-          strange_bins<-c(strange_bins,((i)%%1440)+1)
-          if(strange_bins==1){
-            strange_days<-c(strange_days,no_days+1)
-          }
-          else{
-            strange_days<-c(strange_days,no_days)
-          }
+          strange_bins<-c(strange_bins,((i)%%nrow(datamat))+1)
           strange_data_points<-c(strange_data_points,i+1)
         }
 
@@ -239,11 +106,304 @@ FDARIMA<-function(datamat,no_days_train,max_no_days,fda_forgetting_factor=0.86,a
     }
   }
   anomalous_indicator <- rep(FALSE,length(ARIMA_AE))
-  anomalous_indicator[strange_data_points-(no_days_train*1440)] <- TRUE
-  prediction_matrix<-data.frame(True = datavec[-c(1:(no_days_train*1440))],ARIMA = arima_predictions,ARIMA_AE = ARIMA_AE,FDA=poisson_fda_predictions,FDA_AE = FDA_AE,Anomalous=anomalous_indicator,Lambda_val = lambda_over_time)
+  anomalous_indicator[strange_data_points-(no_days_train*nrow(datamat))] <- TRUE
+  prediction_matrix<-data.frame(True = datavec[-c(1:(no_days_train*nrow(datamat)))],ARIMA = arima_predictions,ARIMA_AE = ARIMA_AE,FDA=fda_predictions,FDA_AE = FDA_AE,Anomalous=anomalous_indicator,Lambda_val = lambda_over_time)
 
   return(list(prediction_matrix=prediction_matrix,strange_data_points=strange_data_points))
 }
+
+
+#' FDARIMA anomaly detector initialiser
+#'
+#' Detects anomalies by separately detecting anomalies using long-term and short-term
+#' models and combining their p-values using Fishers product test statistic to give
+#' final anomaly score that indicates both point and contextual anomalies. This is the funciton to initiate
+#' running in real time. Needed to initially start the model. Anomalies will not be detected until the conformal
+#' prediction sliding window is filled (but model forecasts will still be computed).
+#'
+#' @param datamat a n*p matrix containing the time series where n is
+#' the length of the period and p is the total number of periods observed
+#' @param frequency_of_data this is the length of the period nature of the data
+#' @param no_cycles_train number of periods of data to use as a burnin period
+#' @param fda_forgetting_factor this is the intial forgetting factor to be used within exponential weighting (this is updated within the model)
+#' @param arima_window_size number of historic data points to use to build ARIMA model
+#' @param learning_rate the learning rate within stochastic gradient descent to update lambda
+#' to be excluded from the model
+#' @param threshold_val the threshold value used to detect anomalies
+#' @param sliding_window_size the size of the sliding window for conformal prediction. This will determine whether can
+#'
+#' @return returns list containing a matrix which contains the forecasts, and anomalies detected by each procedure and combined anomalies. Also
+#' outputs a separate vector containing the combined anomalies only
+#' @export
+FDARIMA_initial<-function(datamat,frequency_of_data,no_cycles_train,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005,sliding_window_size=14400){
+  datavec<-c(datamat)
+  fda_predictions <- c()
+  arima_predictions <-c()
+  strange_data_points <- c()
+  FDA_AE<-c()
+  ARIMA_AE<-c()
+  max_no_days <- ncol(datamat)-1
+
+  # Initialisation
+  no_days<-no_cycles_train
+  # Fit weighted FDA:
+  lambda<-fda_forgetting_factor
+  lambda_over_time<-c(rep(lambda,times=frequency_of_data))
+  no_obs<-no_days
+  previous_weights <- lambda^{no_obs-c(1:(no_obs-1))}
+  sum_weights <- sum(previous_weights)+1
+  edge_data<-datamat[,c(1:no_obs)]
+  fda_mean_weight<-fda_mean_weighted(edge_data,c(1:frequency_of_data),102,4,c(previous_weights,1),includebpoints=FALSE)
+  fda_predictions<-c(fda_predictions,fda_mean_weight$mean_curve)
+  #FDA_AE<-c(FDA_AE,abs(fda_mean_weight$mean_curve-datamat[,(no_obs+1)]))
+
+
+
+  # Now perform intial ARIMA using data in training period:
+  i <- no_cycles_train*frequency_of_data
+  fit <- auto.arima(datavec[c((i-arima_window_size+1):i)],max.p = 10,max.q = 10, max.d = 5,seasonal = FALSE)
+  fcast <- forecast(fit,h=1)$mean[1]
+  arima_predictions <- c(arima_predictions,fcast)
+
+
+  # Prepare for updates:
+  weight_matrix <- matrix(rep(previous_weights/lambda,each=frequency_of_data),ncol=(no_cycles_train-1),nrow=frequency_of_data)
+  weight_matrix <- weight_matrix * (1/rowSums(weight_matrix))
+  previous_y_forecast <- rowSums((weight_matrix*datamat[,c(1:(no_cycles_train-1))]))
+
+  current_y_forecast <- fda_mean_weight$weighted_average
+  current_lambda <- lambda
+  current_data <- c(datamat[,no_cycles_train])
+  sum_weights_vec <- rep(sum(previous_weights/lambda),times=frequency_of_data)
+  sum_weights_vec_new <- rep(sum(previous_weights)+1,times=frequency_of_data)
+  new_data <-c()
+
+  # RUN NOT ON INITIAL
+  for(i in c((((no_cycles_train)*frequency_of_data)+1):((ncol(datamat)*frequency_of_data)))){
+    # Assess if anomalous
+    FDA_AE<-c(FDA_AE,abs(fda_predictions[i-(((no_cycles_train)*frequency_of_data))]-datavec[i]))
+    ARIMA_AE<-c(ARIMA_AE,abs(fcast-datavec[(i)]))
+    # Now need to assess whether there are any anomalies
+    if(length(FDA_AE)>=sliding_window_size){
+      FDA_p_value_point <- conformal_prediction_p_val(FDA_AE[((length(FDA_AE)-sliding_window_size+1):length(FDA_AE))])
+      ARIMA_p_value_point<-conformal_prediction_p_val(ARIMA_AE[((length(ARIMA_AE)-sliding_window_size+1):length(ARIMA_AE))])
+      # Now combine using Fishers Product test statistic
+      fisher_score <- -2*(log(FDA_p_value_point)+log(ARIMA_p_value_point))
+      if(fisher_score>qchisq(1-threshold_val,4)){
+        strange_data_points<-c(strange_data_points,i)
+      }
+    }
+    # Run ARIMA
+    arima_data_input <- datavec[setdiff(c((i-arima_window_size+1):i),strange_data_points)]
+    if(length(arima_data_input)==0){
+      while(length(arima_data_input)==0){
+        arima_data_input<-datavec[c((i-1):i)]
+      }
+    }
+    fit<-auto.arima(arima_data_input,max.p = 10,max.q = 10, max.d = 5,seasonal = FALSE)
+    fcast<-forecast(fit,h=1)$mean[1]
+    arima_predictions<-c(arima_predictions,fcast)
+
+    new_data <- c(new_data,datavec[i])
+    # If end of cycle update FDA:
+    if(i%%frequency_of_data==0){
+      # Put into vector which are anomalous
+      if(length(strange_data_points)>0){
+        which_anom_within_cycle <- (((strange_data_points[(i-frequency_of_data)<strange_data_points])-1)%%frequency_of_data)+1
+        which_anomalous <- rep(0,times=frequency_of_data)
+        which_anomalous[which_anom_within_cycle] <- 1
+      }
+      else{
+        which_anomalous <- rep(0,times=frequency_of_data)
+      }
+      # Update lambda
+      new_lambda <- update_fda_ff_adaptive_sequential(new_data,current_data,current_lambda,sum_weights_vec,current_y_forecast,previous_y_forecast,learning_rate,which_anomalous)
+      if((0.6<=new_lambda) & (new_lambda<1)){
+        current_lambda <- new_lambda
+        lambda_over_time<-c(lambda_over_time,rep(new_lambda,times=frequency_of_data))
+      }else{
+        lambda_over_time<-c(lambda_over_time,rep(current_lambda,times=frequency_of_data))
+      }
+      # Run FDA
+      sum_weights_vec <- sum_weights_vec_new
+      fda_mean_weight<-fda_mean_weighted_extreme_update(new_data,current_lambda,sum_weights_vec,current_y_forecast,c(1:frequency_of_data),102,4,which_anomalous,includebpoints=FALSE,bpoints=NULL)
+      fda_predictions<-c(fda_predictions,fda_mean_weight$mean_curve)
+      previous_y_forecast <- current_y_forecast
+      current_y_forecast <- fda_mean_weight$weighted_average
+      sum_weights_vec_new <- fda_mean_weight$new_sum_weights_vec
+      current_data <- new_data
+      new_data <- c()
+    }
+
+  }
+
+
+
+  anomalous_indicator <- rep(FALSE,length(ARIMA_AE))
+  anomalous_indicator[strange_data_points-(no_cycles_train*frequency_of_data)] <- TRUE
+  #print(c(length(datavec[-c(1:(no_cycles_train*frequency_of_data))]),length(arima_predictions[-c(length(arima_predictions))]),length(ARIMA_AE),length(fda_predictions),length(FDA_AE),length(anomalous_indicator),length(lambda_over_time)))
+  #print(c(length(arima_predictions[-length(arima_predictions)]),length(ARIMA_AE[(length(ARIMA_AE)-length(arima_predictions)):(length(ARIMA_AE)-1)]),length(fda_predictions[(length(fda_predictions)-length(arima_predictions)):(length(fda_predictions)-1)])))
+  #prediction_matrix<-data.frame(True = datavec[-c(1:(no_cycles_train*frequency_of_data))],ARIMA = arima_predictions[-length(arima_predictions)],ARIMA_AE = ARIMA_AE[(length(ARIMA_AE)-length(arima_predictions)):(length(ARIMA_AE)-1)],FDA=fda_predictions[(length(fda_predictions)-length(arima_predictions)):(length(fda_predictions)-1)],FDA_AE = FDA_AE[(length(FDA_AE)-length(arima_predictions)):(length(FDA_AE)-1)],Anomalous=anomalous_indicator[(length(anomalous_indicator)-length(arima_predictions)):(length(anomalous_indicator)-1)],Lambda_val = lambda_over_time[(length(lambda_over_time)-length(arima_predictions)):(length(lambda_over_time)-1)])
+  prediction_matrix<-data.frame(True = datavec[-c(1:(no_cycles_train*frequency_of_data))],ARIMA = arima_predictions[-c(length(arima_predictions))],ARIMA_AE = ARIMA_AE,FDA=fda_predictions[1:length(ARIMA_AE)],FDA_AE = FDA_AE[1:length(ARIMA_AE)],Anomalous=anomalous_indicator,Lambda_val = lambda_over_time[1:length(ARIMA_AE)])
+
+  if(length(FDA_AE)>sliding_window_size){
+  return(list(prediction_matrix=prediction_matrix,strange_data_points=strange_data_points,
+              new_data = new_data,
+              current_data = current_data,
+              fda_prediction_update = fda_predictions[c((length(fda_predictions)-frequency_of_data+1):length(fda_predictions))],
+              ARIMA_input_data = datavec[c((length(datavec)-arima_window_size+1):length(datavec))],
+              previous_FDA_wm = previous_y_forecast,
+              current_FDA_wm = current_y_forecast,
+              current_lambda = current_lambda,
+              ARIMA_fcast = fcast,
+              sum_weights_vec = sum_weights_vec,
+              sum_weights_vec_new = sum_weights_vec_new,
+              FDA_AE = FDA_AE[c(((length(FDA_AE)-sliding_window_size+1)):length(FDA_AE))],
+              ARIMA_AE = ARIMA_AE[c(((length(ARIMA_AE)-sliding_window_size+1)):length(ARIMA_AE))]))
+  }
+  else{
+  return(list(prediction_matrix=prediction_matrix,strange_data_points=strange_data_points,
+              new_data = new_data,
+              current_data = current_data,
+              fda_prediction_update = fda_predictions[c((length(fda_predictions)-frequency_of_data+1):length(fda_predictions))],
+              ARIMA_input_data = datavec[c((length(datavec)-arima_window_size+1):length(datavec))],
+              previous_FDA_wm = previous_y_forecast,
+              current_FDA_wm = current_y_forecast,
+              current_lambda = current_lambda,
+              ARIMA_fcast = fcast,
+              sum_weights_vec = sum_weights_vec,
+              sum_weights_vec_new = sum_weights_vec_new,
+              FDA_AE = FDA_AE,
+              ARIMA_AE = ARIMA_AE))
+  }
+}
+
+
+#' FDARIMA anomaly detector updater
+#'
+#' Detects anomalies by separately detecting anomalies using long-term and short-term
+#' models and combining their p-values using Fishers product test statistic to give
+#' final anomaly score that indicates both point and contextual anomalies. This is the funciton to update
+#' existing calculations as new data becomes available.
+#'
+#' @param i the current data point number
+#' @param new_data_point the next value in the series that is used to update the models and asssess if anomalous
+#' @param new_data this is a vector of all data points from the current cycle up till time i-1
+#' @param current_data this is the value at the previous time point in the series
+#' @param fda_predictions this is a vector detailing the current FDA forecasts for the current cycle
+#' @param ARIMA_input_data this is a sliding window of data required to run the ARIMA model. It excludes new_data_point
+#' @param previous_FDA_wm the weighted average from the previous update (at $i-2$)
+#' @param current_FDA_wm the weighted average from update at time $i$
+#' @param ARIMA_fcast this is the ARIMA forecast for time $i$
+#' @param sum_weights_vec this is a vector detailing the weights for each time within the cycle(for the FDA model) for time i-2. This accounts for anomalous data.
+#' @param sum_weights_vec_new this is a vector detailing the weights for each time within the cycle(for the FDA model) for time i-1. This accounts for anomalous data.
+#' @param current_lambda this is the current estimate for the forgetting factor within FDA
+#' @param FDA_AE the absolute error for the FDA mdoel. This is collected to run the conformal predictor and is kept at the lenght of the sliding window.
+#' @param ARIMA_AE the absolute error for the ARIMA model. This is collected to run the conformal predictor and is kept at the lenght of the sliding window.
+#' @param strange_data_points this outlines anomalous points and is a vector of times of anomalous points identified (only require  points in the past cycle).
+#' @param frequency_of_data this is the length of the period nature of the data
+#' @param fda_forgetting_factor this is the intial forgetting factor to be used within exponential weighting (this is updated within the model)
+#' @param arima_window_size number of historic data points to use to build ARIMA model
+#' @param learning_rate the learning rate within stochastic gradient descent to update lambda
+#' to be excluded from the model
+#' @param threshold_val the threshold value used to detect anomalies
+#' @param sliding_window_size the size of the sliding window for conformal prediction. This will determine whether can
+#'
+#' @return returns list containing a matrix which contains the forecasts, and anomalies detected by each procedure and combined anomalies. Also
+#' outputs a separate vector containing the combined anomalies only
+#' @export
+FDARIMA_updater<-function(i,new_data_point,new_data,current_data,fda_predictions,ARIMA_input_data,previous_FDA_wm,current_FDA_wm,ARIMA_fcast,sum_weights_vec,sum_weights_vec_new,current_lambda,FDA_AE,ARIMA_AE,strange_data_points,frequency_of_data,fda_forgetting_factor=0.99,arima_window_size=60,learning_rate=1e-3,threshold_val=0.005,sliding_window_size=14400){
+
+  # Assess if anomalous
+  FDA_AE<-c(FDA_AE,abs(fda_predictions[((i-1)%%frequency_of_data)+1]-new_data_point))
+  FDA_fcast <- fda_predictions[((i-1)%%frequency_of_data)+1]
+  ARIMA_AE<-c(ARIMA_AE,abs(ARIMA_fcast-new_data_point))
+
+  # Now need to assess whether there are any anomalies
+  if(length(FDA_AE)>sliding_window_size){
+    FDA_p_value_point <- conformal_prediction_p_val(FDA_AE[((length(FDA_AE)-sliding_window_size+1):length(FDA_AE))])
+    ARIMA_p_value_point<-conformal_prediction_p_val(ARIMA_AE[((length(ARIMA_AE)-sliding_window_size+1):length(ARIMA_AE))])
+
+    # Now combine using Fishers Product test statistic
+    fisher_score <- -2*(log(FDA_p_value_point)+log(ARIMA_p_value_point))
+    if(fisher_score>qchisq(1-threshold_val,4)){
+      strange_data_points<-c(strange_data_points,i)
+    }
+    FDA_AE <- FDA_AE[-c(1)]
+    ARIMA_AE <- ARIMA_AE[-c(1)]
+  }
+  # Run ARIMA
+  ARIMA_input_data_new <- c(ARIMA_input_data[-c(1)],new_data_point)
+  arima_data_input <- ARIMA_input_data_new[setdiff(c((i-arima_window_size+1):i),strange_data_points)-(i-arima_window_size)]
+  if(length(arima_data_input)==0){
+    while(length(arima_data_input)==0){
+      arima_data_input<-ARIMA_input_data_new[c(arima_window_size-1,arima_window_size)]
+    }
+  }
+  fit<-auto.arima(arima_data_input,max.p = 10,max.q = 10, max.d = 5,seasonal = FALSE)
+  fcast<-forecast(fit,h=1)$mean[1]
+  new_data <- c(new_data,new_data_point)
+  # If end of cycle update FDA:
+  if(i%%frequency_of_data==0){
+    # Put into vector which are anomalous
+    if(length(strange_data_points)>0){
+      which_anom_within_cycle <- (((strange_data_points[(i-frequency_of_data)<strange_data_points])-1)%%frequency_of_data)+1
+      which_anomalous <- rep(0,times=frequency_of_data)
+      which_anomalous[which_anom_within_cycle] <- 1
+    }
+    else{
+      which_anomalous <- rep(0,times=frequency_of_data)
+    }
+    # Update lambda
+    new_lambda <- update_fda_ff_adaptive_sequential(new_data,current_data,current_lambda,sum_weights_vec,current_FDA_wm,previous_FDA_wm,learning_rate,which_anomalous)
+    if((0.6<=new_lambda) & (new_lambda<1)){
+      current_lambda <- new_lambda
+    }
+    # Run FDA
+    sum_weights_vec <- sum_weights_vec_new
+    fda_mean_weight<-fda_mean_weighted_extreme_update(new_data,current_lambda,sum_weights_vec,current_FDA_wm,c(1:frequency_of_data),102,4,which_anomalous,includebpoints=FALSE,bpoints=NULL)
+    fda_predictions<-c(fda_predictions,fda_mean_weight$mean_curve)
+    previous_FDA_wm <- current_FDA_wm
+    current_FDA_wm <- fda_mean_weight$weighted_average
+    sum_weights_vec_new <- fda_mean_weight$new_sum_weights_vec
+    current_data <- new_data
+    new_data <- c()
+  }
+  if(length(FDA_AE)>=sliding_window_size){
+    return(list(new_data = new_data,
+                current_data = current_data,
+                strange_data_points = strange_data_points,
+                fda_prediction_update = fda_predictions[c((length(fda_predictions)-frequency_of_data+1):length(fda_predictions))],
+                ARIMA_input_data = ARIMA_input_data_new,
+                previous_FDA_wm = previous_FDA_wm,
+                current_FDA_wm = current_FDA_wm,
+                current_lambda = current_lambda,
+                ARIMA_fcast = fcast,
+                FDA_fcast = FDA_fcast,
+                sum_weights_vec = sum_weights_vec,
+                sum_weights_vec_new = sum_weights_vec_new,
+                FDA_AE = FDA_AE[c(((length(FDA_AE)-sliding_window_size+1)):length(FDA_AE))],
+                ARIMA_AE = ARIMA_AE[c(((length(ARIMA_AE)-sliding_window_size+1)):length(ARIMA_AE))]))
+  }
+  else{
+    return(list(new_data = new_data,
+                current_data = current_data,
+                strange_data_points = strange_data_points,
+                fda_prediction_update = fda_predictions[c((length(fda_predictions)-frequency_of_data+1):length(fda_predictions))],
+                ARIMA_input_data = ARIMA_input_data_new,
+                previous_FDA_wm = previous_FDA_wm,
+                current_FDA_wm = current_FDA_wm,
+                current_lambda = current_lambda,
+                ARIMA_fcast = fcast,
+                FDA_fcast = FDA_fcast,
+                sum_weights_vec = sum_weights_vec,
+                sum_weights_vec_new = sum_weights_vec_new,
+                FDA_AE = FDA_AE,
+                ARIMA_AE = ARIMA_AE))
+  }
+}
+
+
 
 #' Uses Shermann-Morrison theorem to update A matrix
 #'
